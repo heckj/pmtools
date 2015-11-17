@@ -1,0 +1,16 @@
+{
+    "di.js":               "https://github.com/rackhd/di.js.git",
+    "on-core":             "https://github.com/rackhd/on-core.git",
+    "on-tftp":             "https://github.com/rackhd/on-tftp.git",
+    "on-http":             "https://github.com/rackhd/on-http.git",
+    "on-syslog":           "https://github.com/rackhd/on-syslog.git",
+    "on-taskgraph":        "https://github.com/rackhd/on-taskgraph.git",
+    "on-tasks":            "https://github.com/rackhd/on-tasks.git",
+    "on-tools":            "https://github.com/rackhd/on-tools.git",
+    "on-dhcp-proxy":       "https://github.com/rackhd/on-dhcp-proxy.git",
+    "on-statsd":           "https://github.com/rackhd/on-statsd.git",
+    "on-imagebuilder":     "https://github.com/rackhd/on-imagebuilder.git",
+    "on-web-ui":           "https://github.com/rackhd/on-web-ui.git",
+    "docs":                "https://github.com/rackhd/docs.git",
+    "rackhd":              "https://github.com/rackhd/rackhd.git"
+}

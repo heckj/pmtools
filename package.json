@@ -1,0 +1,37 @@
+{
+  "name": "pmtools",
+  "version": "0.2.0",
+  "description": "project management tools for working with github",
+  "main": "index.js",
+  "scripts": {
+    "test": "mocha $(find spec -name '*-spec.js') -R spec"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/heckj/pmtools.git"
+  },
+  "keywords": [
+    "pm"
+  ],
+  "author": "heckj@mac.com",
+  "license": "Apache-2.0",
+  "bugs": {
+    "url": "https://github.com/heckj/pmtools/issues"
+  },
+  "homepage": "https://github.com/heckj/pmtools",
+  "dependencies": {
+    "commander": "^2.5.0",
+    "github": "^0.2.2",
+    "lodash": "^2.4.1",
+    "nconf": "^0.6.9",
+    "node-xlsx": "^0.5.1",
+    "q": "^1.0.1"
+  },
+  "devDependencies": {
+    "chai": "^1.9.2",
+    "istanbul": "^0.3.2",
+    "mocha": "^2.0.1",
+    "sinon": "^1.11.1",
+    "sinon-chai": "^2.6.0"
+  }
+}

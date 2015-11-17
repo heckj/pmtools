@@ -1,0 +1,661 @@
+#!/usr/bin/env node
+//Copyright 2014, Renasar Technologies Inc.
+/* jshint node: true */
+
+'use strict';
+
+var program = require('commander'),
+    _ = require('lodash'),
+    nconf = require('nconf'),
+    Q = require('q'),
+    githelper = require('./lib/githelper'),
+    GithubClient = require('./lib/githubapihelper');
+
+var fs = require('fs');
+var raw = fs.readFileSync(__dirname + '/package.json', {encoding: 'utf8'});
+var packagedata = JSON.parse(raw);
+nconf.use('memory')
+    .defaults({
+        debug: false,
+        verbose: false,
+        org: "...",
+        authtoken: "..."
+    });
+var cwd = process.cwd();
+
+/**
+ * returns a promise with the workspace data
+ *
+ * @returns {Q.promise}
+ */
+function readWorkspace() {
+    var deferred = Q.defer();
+    Q.nfcall(fs.readFile, cwd + '/workspace.json', 'utf8')
+        .then(function (data) {
+            var workfile = JSON.parse(data);
+            deferred.resolve(workfile);
+        }).fail(function (err) {
+            deferred.reject(err);
+        });
+    return deferred.promise;
+}
+
+/**
+ * returns a short-form string of the issue URL
+ * @param issueUrl
+ */
+function issueShortForm(issueUrl) {
+    //https://github.com/renasar/renasar-pxe/issues/478
+    var parts = issueUrl.split('/');
+    return ""+parts[4]+"#"+parts[6];
+}
+
+// program options to override defaults
+program
+    .version(packagedata.version)
+    .option('--debug', 'Enable Debug, default is "' + nconf.get('debug') + '"', function () {
+        nconf.set('debug', true);
+        Q.longStackSupport = true;
+    })
+    .option('--verbose', 'Enable Verbose output, default is "' + nconf.get('verbose') + '"',
+    function () {
+        nconf.set('verbose', true);
+    })
+    .option('-o, --org [organization name]',
+    'set organization name, default is "' + nconf.get('org') + '"',
+    function (orgname) {
+        nconf.set('org', orgname);
+    }
+);
+
+program
+    .command('repos')
+    .description('list github repositories')
+    .action(function () {
+        var ghc = new GithubClient(nconf);
+        ghc
+            .allRepos(nconf.get('org'))
+            .then(function (repoList) {
+                _.forEach(repoList, function (repo) {
+                    var msg = repo.owner.login + "/" + repo.name + " " + repo.id;
+                    if (repo.private) {
+                        msg += " (private)";
+                    }
+                    console.log(msg);
+                });
+
+            })
+            .fail(function (err) {
+                console.error("Unable to get repository listing for " +
+                    nconf.get('org') + ": " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('export')
+    .description('export github issue data')
+    .action(function () {
+        var ghc = new GithubClient(nconf);
+        // var util = require('util');
+        var xlsx = require('node-xlsx');
+        ghc
+            .loadAllIssues(nconf.get('org'))
+            .then(function(issueList) {
+                var data = _.map(issueList, function(issue) {
+                    var xx =  [
+                        issue.html_url,
+                        issue.title,
+                        issue.user.login,
+                        issue.state,
+                        issue.created_at,
+                        issue.body
+                    ];
+                    if (issue.assignee) {
+                        xx.push(issue.assignee.login);
+                    }
+                    return xx;
+                });
+                data.unshift(['original link', 'title', 'creator', 'state',
+                              'created', 'detail', 'assignee']);
+                return xlsx.build([{name: "mySheetName", data: data}]);
+            }).then(function(buffer) {
+                fs.writeFileSync('export.xlsx', buffer);
+                console.log("Created export.xlsx");
+            }).done();
+    });
+
+/*
+Example data format for github issue:
+
+html_url
+title
+user.login (creator)
+state
+assignee?.login
+created_at
+body
+
+{ url: 'https://api.github.com/repos/renasar/renasar-crypto/issues/1',
+  labels_url: 'https://api.github.com/repos/renasar/renasar-crypto/issues/1/labels{/name}',
+  comments_url: 'https://api.github.com/repos/renasar/renasar-crypto/issues/1/comments',
+  events_url: 'https://api.github.com/repos/renasar/renasar-crypto/issues/1/events',
+  html_url: 'https://github.com/renasar/renasar-crypto/issues/1',
+  id: 38124678,
+  number: 1,
+  title: 'convert cryptoclient to use https://github.com/mikeal/request/',
+  user:
+   { login: 'heckj',
+     id: 43388,
+     avatar_url: 'https://avatars.githubusercontent.com/u/43388?v=3',
+     gravatar_id: '',
+     url: 'https://api.github.com/users/heckj',
+     html_url: 'https://github.com/heckj',
+     followers_url: 'https://api.github.com/users/heckj/followers',
+     following_url: 'https://api.github.com/users/heckj/following{/other_user}',
+     gists_url: 'https://api.github.com/users/heckj/gists{/gist_id}',
+     starred_url: 'https://api.github.com/users/heckj/starred{/owner}{/repo}',
+     subscriptions_url: 'https://api.github.com/users/heckj/subscriptions',
+     organizations_url: 'https://api.github.com/users/heckj/orgs',
+     repos_url: 'https://api.github.com/users/heckj/repos',
+     events_url: 'https://api.github.com/users/heckj/events{/privacy}',
+     received_events_url: 'https://api.github.com/users/heckj/received_events',
+     type: 'User',
+     site_admin: false },
+  labels:
+   [ { url: 'https://api.github.com/repos/renasar/renasar-crypto/labels/Ops',
+       name: 'Ops',
+       color: 'ffffff' } ],
+  state: 'open',
+  locked: false,
+  assignee: null,
+  milestone: null,
+  comments: 0,
+  created_at: '2014-07-17T20:53:05Z',
+  updated_at: '2014-11-04T21:21:15Z',
+  closed_at: null,
+  body: 'httppost is broken for any complex/lengthy data coming back
+    - overlay on https://github.com/mikeal/request/ and rebuild the client functionality using
+    that library to simplify this setup' }
+*/
+program
+    .command('issues')
+    .description('list all github issues')
+    .option('-m, --milestone <milestone>', 'list for milestone')
+    .option('-l, --label <label>', 'list for label')
+    .option('-a, --assigned <gituser>', 'list for assignee')
+    .option('--nolabels', 'list only issues with no labels')
+    .action(function (thiscommand) {
+
+        var tagIndex = {};
+        var milestoneIndex = {};
+        var issues = null;
+
+        var ghc = new GithubClient(nconf);
+        ghc
+            .loadAllIssues(nconf.get('org'))
+            .then(function(issueList) {
+                issues = issueList;
+                _.forEach(issueList, function(issue) {
+                    // build index on label names
+                    if (issue.labels) {
+                        _.forEach(issue.labels, function(label) {
+                            if (tagIndex[label.name]) {
+                                tagIndex[label.name].push(issue);
+                            } else {
+                                tagIndex[label.name] = [issue];
+                            }
+                        });
+                    }
+                    // build index on milestone titles
+                    if (issue.milestone) {
+                        if (milestoneIndex[issue.milestone.title]) {
+                            milestoneIndex[issue.milestone.title].push(issue);
+                        } else {
+                            milestoneIndex[issue.milestone.title] = [issue];
+                        }
+                    }
+                });
+            })
+            .then(function() {
+                // --nolabel
+                if (thiscommand.nolabels) {
+                    _.forEach(issues, function (issue) {
+                        if (!issue.labels) {
+                            var msg = "  " + issueShortForm(issue.html_url) + // jshint ignore:line
+                                "\n      " + issue.title;
+                            console.log(msg);
+                        }
+
+                    });
+                    return;
+                }
+
+                // --assigned option
+                if (thiscommand.assigned) {
+                    var assignedIssueList = [];
+                    _.forEach(issues, function(issue) {
+                        if (issue.assignee &&
+                            issue.assignee.login === thiscommand.assigned) {
+                            assignedIssueList.push(issue);
+                        }
+                    });
+
+                    var assignedMilestones = _.groupBy(assignedIssueList, function(issue) {
+                        if (issue.milestone) {
+                            return issue.milestone.title;
+                        } else {
+                            return "no milestone";
+                        }
+                    });
+                    _.forEach(assignedMilestones, function(milestoneIssues, milestone) {
+                        console.log("MILESTONE: "+milestone);
+                        _.forEach(milestoneIssues, function(issue) {
+                            var assigned = issue.assignee.login;
+                            var msg = "  ["+assigned+"] " + issueShortForm(issue.html_url) + // jshint ignore:line
+                                "\n      " + issue.title;
+                            console.log(msg);
+                        });
+                    });
+                    return;
+                }
+                // --label option
+                if (thiscommand.label) {
+                    var issuesForLabel = tagIndex[thiscommand.label];
+                    var milestones = _.groupBy(issuesForLabel, function(issue) {
+                        if (issue.milestone) {
+                            return issue.milestone.title;
+                        } else {
+                            return "no milestone";
+                        }
+                    });
+                    _.forEach(milestones, function(milestoneIssues, milestone) {
+                        console.log("MILESTONE: "+milestone);
+                        _.forEach(milestoneIssues, function(issue) {
+                            var msg = "  " + issueShortForm(issue.html_url) + // jshint ignore:line
+                                "\n      " + issue.title;
+                            console.log(msg);
+                        });
+                    });
+                    return;
+                }
+
+                // --milestone option
+                if (thiscommand.milestone) {
+                    //console.log(milestoneIndex);
+                    //return;
+                    var issuesForMilestone = milestoneIndex[thiscommand.milestone];
+                    console.log("MILESTONE: "+thiscommand.milestone);
+                    _.forEach(issuesForMilestone, function(issue) {
+                        var assigned = "NONE";
+                        if (issue.assignee) {
+                            assigned = issue.assignee.login;
+                        }
+                        var msg = "["+assigned+"] "+issueShortForm(issue.html_url) + // jshint ignore:line
+                            " " + issue.title;
+                        console.log(msg);
+                    });
+                    return;
+                }
+                // no options
+                _.forEach(tagIndex, function(issueList, tag) {
+                    console.log("[[["+tag+"]]]");
+                    var milestones = _.groupBy(issueList, function(issue) {
+                        if (issue.milestone) {
+                            return issue.milestone.title;
+                        } else {
+                            return "no milestone";
+                        }
+                    });
+                    _.forEach(milestones, function(milestoneIssues, milestone) {
+                        console.log("MILESTONE: "+milestone);
+                        _.forEach(milestoneIssues, function(issue) {
+                            var msg = issueShortForm(issue.html_url) + " " + issue.title; // jshint ignore:line
+                            console.log(msg);
+                        });
+                    });
+                });
+
+            })
+            .fail(function (err) {
+                console.error("Unable to retrieve issue listing for " +
+                nconf.get('org') + ": " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('create-label <label>')
+    .description("create a lable on all team repos")
+    .action(function (label) {
+        var ghc = new GithubClient(nconf);
+        ghc.createLabels(nconf.get('org'), label)
+            .fail(function (err) {
+                console.error("Unable to create label : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('delete-label <label>')
+    .description("delete a label on all team repos")
+    .action(function (label) {
+        var ghc = new GithubClient(nconf);
+        ghc.deleteLabels(nconf.get('org'), label)
+            .fail(function (err) {
+                console.error("Unable to delete the label : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('list-labels')
+    .alias('labels')
+    .description("list the labels across all team repos")
+    .action(function () {
+        var ghc = new GithubClient(nconf);
+        ghc.listLabels(nconf.get('org'))
+            .then(function (labelSet) {
+                _.forEach(labelSet, function(labelList, key) {
+                    console.log(key);
+                    if (nconf.get('verbose')) {
+                        _.forEach(labelList, function(label) {
+                            console.log("  (#"+label.color+") "+label.url);
+                        });
+                    }
+                });
+            })
+            .fail(function (err) {
+                console.error("Unable to get labels on team repos : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('list-milestones')
+    .alias('milestones')
+    .description("list the milestones across all team repos")
+    .action(function () {
+        var ghc = new GithubClient(nconf);
+        ghc.listMilestones(nconf.get('org'))
+            .then(function (milestoneSet) {
+                _.forEach(milestoneSet, function(milestoneList, key) {
+                    console.log(key);
+                    if (nconf.get('verbose')) {
+                        _.forEach(milestoneList, function(milestone) {
+                            console.log("  ("+milestone.number+") "+milestone.url);
+                        });
+                    }
+                });
+            })
+            .fail(function (err) {
+                console.error("Unable to get labels on team repos : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('create-milestone <milestone>')
+    .description("create a milestone across all team repos")
+    .action(function (milestone) {
+        var ghc = new GithubClient(nconf);
+        ghc.createMilestones(nconf.get('org'), milestone)
+            //.then(function(results) {
+            //    console.log(results);
+            //})
+            .fail(function (err) {
+                console.error("Unable to create the milestone : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('delete-milestone <milestone>')
+    .description("delete a milestone across all team repos")
+    .action(function (milestone) {
+        var ghc = new GithubClient(nconf);
+        ghc.deleteMilestones(nconf.get('org'), milestone)
+            //.then(function(results) {
+            //    console.log(results);
+            //})
+            .fail(function (err) {
+                console.error("Unable to get delete the milestone : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('checkout-workspace')
+    .description("Clone or sync workspace")
+    .alias('sync')
+    .action(function () {
+        readWorkspace()
+            .then(function (workfile) {
+                var keys = [];
+                var promises = _.map(workfile, function (value, key) {
+                    keys.push(key);
+                    return githelper.cloneOrPull(cwd, key, value, nconf);
+                });
+
+                return Q.allSettled(promises)
+                    .then(function (results) {
+
+                        var qq = _.zipObject(keys, results);
+                        _.forEach(qq, function (resolvedPromise, key) {
+                            if (resolvedPromise.state === 'rejected') {
+                                console.log("[" + key + "] FAILED");
+                                console.log("    " + resolvedPromise.reason);
+                            } else {
+                                console.log("[" + key + "] OK");
+                            }
+                        });
+                    });
+            })
+            .fail(function (err) {
+                console.error("Unable to checkout the workspace : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('reset-workspace')
+    .description("Reset workspace to master")
+    .alias('reset')
+    .action(function () {
+        readWorkspace()
+            .then(function (workfile) {
+                var keys = [];
+                var promises = _.map(workfile, function (value, key) {
+                    var gitDir = cwd + "/" + key;
+                    keys.push(key);
+                    return githelper.resetToMaster(gitDir, nconf);
+                });
+                return Q.allSettled(promises)
+                    .then(function (results) {
+                        var qq = _.zipObject(keys, results);
+                        _.forEach(qq, function (resolvedPromise, key) {
+                            if (resolvedPromise.state === 'rejected') {
+                                console.log("[" + key + "] FAILED");
+                                console.log("    " + resolvedPromise.reason);
+                            } else {
+                                console.log("[" + key + "] OK");
+                            }
+                        });
+                    });
+            })
+            .fail(function (err) {
+                console.error("Unable to get reset the workspace : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('make-release-branch <branchname>')
+    .description("Creates a release branch")
+    .action(function (branchname) {
+        var workspaceData = null;
+        readWorkspace()
+            .then(function (workfile) {
+                workspaceData = workfile;
+                var keys = [];
+                var promises = _.map(workfile, function (value, key) {
+                    var gitDir = cwd + "/" + key;
+                    keys.push(key);
+                    return githelper.createBranch(branchname, gitDir, nconf);
+                });
+                return Q.allSettled(promises)
+                    .then(function (results) {
+                        var qq = _.zipObject(keys, results);
+                        _.forEach(qq, function (resolvedPromise, key) {
+                            if (resolvedPromise.state === 'rejected') {
+                                console.log("[" + key + "] FAILED");
+                                console.log("    " + resolvedPromise.reason);
+                            } else {
+                                console.log("[" + key + "] OK");
+                            }
+                        });
+                    });
+            })
+            .then(function () {
+                var keys = [];
+                var promises = _.map(workspaceData, function (value, key) {
+                    var gitDir = cwd + "/" + key;
+                    keys.push(key);
+                    return githelper.updatePackageToBranch(branchname, gitDir, nconf);
+                });
+                return Q.allSettled(promises)
+                    .then(function (results) {
+                        var qq = _.zipObject(keys, results);
+                        _.forEach(qq, function (resolvedPromise, key) {
+                            if (resolvedPromise.state === 'rejected') {
+                                console.log("[" + key + "] FAILED");
+                                console.log("    " + resolvedPromise.reason);
+                            } else {
+                                console.log("[" + key + "] OK");
+                            }
+                        });
+                    });
+            })
+            .fail(function (err) {
+                console.error("Unable to make a release branch : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('workspace-status')
+    .description("Displays the git status of each repository in the workspace")
+    .alias('status')
+    .action(function () {
+        var statusMap = null;
+        var branchMap = null;
+        var keys = [];
+        readWorkspace()
+            .then(function (workfile) {
+                var promises = _.map(workfile, function (value, key) {
+                    var gitDir = cwd + "/" + key;
+                    keys.push(key);
+                    return githelper.branchStatus(gitDir, nconf);
+                });
+                return Q.allSettled(promises)
+                    .then(function (results) {
+                        statusMap = _.zipObject(keys, results);
+                    });
+            })
+            .then(function () {
+                var promises = _.map(keys, function (key) {
+                    var gitDir = cwd + "/" + key;
+                    return githelper.currentBranch(gitDir, nconf);
+                });
+                return Q.allSettled(promises)
+                    .then(function (results) {
+                        branchMap = _.zipObject(keys, results);
+                    });
+            })
+            .then(function () {
+                _.forEach(keys, function (key) {
+                    if (statusMap[key].state === 'rejected') {
+                        console.log("[" + key + "] FAILED");
+                        console.log("    " + statusMap[key].reason);
+                    } else {
+                        console.log("[" + key + "] (" + branchMap[key].value + ")");
+                        var os = require('os');
+                        var lines = statusMap[key].value.split(os.EOL);
+                        _.forEach(lines, function (line) {
+                            console.log("    " + line);
+                        });
+                    }
+                });
+            })
+            .fail(function (err) {
+                console.error("Unable to get status on the workspace : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+
+program
+    .command('events <user>')
+    .description("Get all recent events for a user")
+    .action(function (user) {
+
+        var ghc = new GithubClient(nconf);
+        ghc.getAllUserEvents(user)
+            .then(function(events) {
+                //console.log(events);
+
+                _.forEach(events, function(event) {
+                    console.log("E: "+event.repo.name+' '+event.type+' ');
+                });
+            })
+            .fail(function (err) {
+                console.error("Unable to get user issues : " + err);
+                if (nconf.get('debug')) {
+                    console.error(err.stack);
+                }
+            })
+            .done();
+    });
+// new commands ABOVE here - provide help output if something unexpected comes in
+program.command('*').description('').action(function () {
+    program.help();
+});
+program.parse(process.argv);
+if (!program.args.length) {
+    program.help();
+}
