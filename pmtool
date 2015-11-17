@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-//Copyright 2014, Renasar Technologies Inc.
 /* jshint node: true */
 
 'use strict';
