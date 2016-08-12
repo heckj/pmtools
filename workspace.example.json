@@ -5,6 +5,7 @@
     "on-http":             "https://github.com/rackhd/on-http.git",
     "on-syslog":           "https://github.com/rackhd/on-syslog.git",
     "on-taskgraph":        "https://github.com/rackhd/on-taskgraph.git",
+    "on-wss":              "https://github.com/rackhd/on-wss.git",
     "on-tasks":            "https://github.com/rackhd/on-tasks.git",
     "on-tools":            "https://github.com/rackhd/on-tools.git",
     "on-dhcp-proxy":       "https://github.com/rackhd/on-dhcp-proxy.git",
