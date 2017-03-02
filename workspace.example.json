@@ -12,6 +12,5 @@
     "on-statsd":           "https://github.com/rackhd/on-statsd.git",
     "on-imagebuilder":     "https://github.com/rackhd/on-imagebuilder.git",
     "on-web-ui":           "https://github.com/rackhd/on-web-ui.git",
-    "docs":                "https://github.com/rackhd/docs.git",
-    "rackhd":              "https://github.com/rackhd/rackhd.git"
+    "docs":                "https://github.com/rackhd/docs.git"
 }
